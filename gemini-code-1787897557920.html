@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>웹 2인용 피카츄배구</title>
+    <style>
+        body {
+            background-color: #222;
+            color: white;
+            text-align: center;
+            font-family: 'Arial', sans-serif;
+            margin: 0;
+            padding: 20px;
+        }
+        canvas {
+            background: linear-gradient(to bottom, #87CEEB, #E0F6FF);
+            display: block;
+            margin: 0 auto;
+            border: 4px solid #fff;
+            box-shadow: 0 0 20px rgba(0,0,0,0.5);
+        }
+        .info {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #ccc;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>피카츄 배구 (2인용)</h1>
+    <canvas id="gameCanvas" width="800" height="400"></canvas>
+    <div class="info">
+        <strong>1플레이어 (왼쪽):</strong> 이동 (W, A, S, D) / 스파이크 (F)<br>
+        <strong>2플레이어 (오른쪽):</strong> 이동 (방향키) / 스파이크 (K)
+    </div>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+
+        // 게임 설정
+        const gravity = 0.4;
+        
+        let score1 = 0;
+        let score2 = 0;
+
+        // 피카츄 (플레이어 1)
+        const p1 = {
+            x: 150, y: 300, w: 50, h: 50,
+            vx: 0, vy: 0, speed: 5, jumpPower: -10,
+            color: '#FFD700', isJumping: false,
+            side: 'left'
+        };
+
+        // 피카츄 (플레이어 2)
+        const p2 = {
+            x: 600, y: 300, w: 50, h: 50,
+            vx: 0, vy: 0, speed: 5, jumpPower: -10,
+            color: '#FFA500', isJumping: false,
+            side: 'right'
+        };
+
+        // 배구공
+        const ball = {
+            x: 400, y: 150, radius: 15,
+            vx: 0, vy: 0
+        };
+
+        // 네트
+        const net = {
+            x: 395, y: 260, w: 10, h: 140
+        };
+
+        // 키 입력 상태
+        const keys = {};
+
+        window.addEventListener('keydown', (e) => { keys[e.code] = true; });
+        window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+
+        function resetBall(servingSide) {
+            ball.x = servingSide === 'left' ? 200 : 600;
+            ball.y = 100;
+            ball.vx = 0;
+            ball.vy = 0;
+        }
+
+        function update() {
+            // --- 플레이어 1 조작 (WASD + F) ---
+            p1.vx = 0;
+            if (keys['KeyA']) p1.vx = -p1.speed;
+            if (keys['KeyD']) p1.vx = p1.speed;
+            if (keys['KeyW'] && !p1.isJumping) {
+                p1.vy = p1.jumpPower;
+                p1.isJumping = true;
+            }
+
+            // --- 플레이어 2 조작 (방향키 + K) ---
+            p2.vx = 0;
+            if (keys['ArrowLeft']) p2.vx = -p2.speed;
+            if (keys['ArrowRight']) p2.vx = p2.speed;
+            if (keys['ArrowUp'] && !p2.isJumping) {
+                p2.vy = p2.jumpPower;
+                p2.isJumping = true;
+            }
+
+            // 중력 및 위치 업데이트 (P1)
+            p1.vy += gravity;
+            p1.x += p1.vx;
+            p1.y += p1.vy;
+            if (p1.y + p1.h > canvas.height) {
+                p1.y = canvas.height - p1.h;
+                p1.vy = 0;
+                p1.isJumping = false;
+            }
+            // P1 이동 제한 (왼쪽 진영)
+            if (p1.x < 0) p1.x = 0;
+            if (p1.x + p1.w > net.x) p1.x = net.x - p1.w;
+
+            // 중력 및 위치 업데이트 (P2)
+            p2.vy += gravity;
+            p2.x += p2.vx;
+            p2.y += p2.vy;
+            if (p2.y + p2.h > canvas.height) {
+                p2.y = canvas.height - p2.h;
+                p2.vy = 0;
+                p2.isJumping = false;
+            }
+            // P2 이동 제한 (오른쪽 진영)
+            if (p2.x < net.x + net.w) p2.x = net.x + net.w;
+            if (p2.x + p2.w > canvas.width) p2.x = canvas.width - p2.w;
+
+            // --- 공 물리 엔진 ---
+            ball.vy += gravity * 0.6; // 공은 중력을 조금 약하게
+            ball.x += ball.vx;
+            ball.y += ball.vy;
+
+            // 바닥에 닿았을 때 (점수 판정)
+            if (ball.y + ball.radius >= canvas.height) {
+                if (ball.x < canvas.width / 2) {
+                    score2++;
+                    resetBall('right');
+                } else {
+                    score1++;
+                    resetBall('left');
+                }
+            }
+
+            // 벽 충돌 (좌우)
+            if (ball.x - ball.radius < 0) { ball.x = ball.radius; ball.vx *= -1; }
+            if (ball.x + ball.radius > canvas.width) { ball.x = canvas.width - ball.radius; ball.vx *= -1; }
+            // 천장 충돌
+            if (ball.y - ball.radius < 0) { ball.y = ball.radius; ball.vy *= -1; }
+
+            // 네트 충돌
+            if (ball.x + ball.radius > net.x && ball.x - ball.radius < net.x + net.w &&
+                ball.y + ball.radius > net.y) {
+                // 위쪽 면 충돌
+                if (ball.y < net.y) {
+                    ball.y = net.y - ball.radius;
+                    ball.vy *= -1;
+                } else {
+                    // 옆면 충돌
+                    ball.vx *= -1;
+                }
+            }
+
+            // 플레이어와 공 충돌 함수
+            checkBallCollision(p1);
+            checkBallCollision(p2);
+
+            // 스파이크 기능 (F키 또는 K키)
+            if (keys['KeyF'] && Math.hypot(ball.x - (p1.x+p1.w/2), ball.y - (p1.y+p1.h/2)) < 60) {
+                ball.vx = 8; ball.vy = -8;
+            }
+            if (keys['KeyK'] && Math.hypot(ball.x - (p2.x+p2.w/2), ball.y - (p2.y+p2.h/2)) < 60) {
+                ball.vx = -8; ball.vy = -8;
+            }
+        }
+
+        function checkBallCollision(p) {
+            // 플레이어 중심 좌표
+            let cx = p.x + p.w / 2;
+            let cy = p.y + p.h / 2;
+
+            let dist = Math.hypot(ball.x - cx, ball.y - cy);
+            if (dist < ball.radius + p.w / 2) {
+                // 튕겨나가는 각도 계산
+                let angle = Math.atan2(ball.y - cy, ball.x - cx);
+                let speed = Math.hypot(ball.vx, ball.vy);
+                let newSpeed = Math.max(speed, 5); // 최소 속도 보장
+
+                ball.vx = Math.cos(angle) * newSpeed + p.vx * 0.5;
+                ball.vy = Math.sin(angle) * newSpeed + p.vy * 0.5;
+
+                // 공이 플레이어 파묻히는 것 방지
+                ball.x = cx + Math.cos(angle) * (ball.radius + p.w / 2);
+                ball.y = cy + Math.sin(angle) * (ball.radius + p.h / 2);
+            }
+        }
+
+        function draw() {
+            // 화면 지우기
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // 네트 그리기
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(net.x, net.y, net.w, net.h);
+
+            // 플레이어 1 (노란 피카츄 대체 사각형)
+            ctx.fillStyle = p1.color;
+            ctx.fillRect(p1.x, p1.y, p1.w, p1.h);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(p1.x + 10, p1.y + 15, 6, 6); // 눈
+
+            // 플레이어 2 (주황 피카츄 대체 사각형)
+            ctx.fillStyle = p2.color;
+            ctx.fillRect(p2.x, p2.y, p2.w, p2.h);
+            ctx.fillStyle = '#000';
+            ctx.fillRect(p2.x + 34, p2.y + 15, 6, 6); // 눈
+
+            // 배구공 그리기
+            ctx.beginPath();
+            ctx.arc(ball.x, ball.y, ball.radius, 0, Math.PI * 2);
+            ctx.fillStyle = '#FF4500';
+            ctx.fill();
+            ctx.closePath();
+
+            // 점수 표시
+            ctx.font = 'bold 30px Arial';
+            ctx.fillStyle = '#333';
+            ctx.fillText(score1, canvas.width / 4, 50);
+            ctx.fillText(score2, (canvas.width / 4) * 3, 50);
+        }
+
+        function gameLoop() {
+            update();
+            draw();
+            requestAnimationFrame(gameLoop);
+        }
+
+        resetBall('left');
+        gameLoop();
+    </script>
+</body>
+</html>
