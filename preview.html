@@ -1,0 +1,524 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>꼬부기 더비 - 2인용 축구</title>
+
+<style>
+    * {
+        box-sizing: border-box;
+    }
+
+    body {
+        margin: 0;
+        background: #172b35;
+        color: white;
+        font-family: Arial, sans-serif;
+        text-align: center;
+    }
+
+    h1 {
+        margin: 18px 0 8px;
+    }
+
+    .info {
+        margin: 10px;
+        font-size: 17px;
+    }
+
+    canvas {
+        display: block;
+        margin: 15px auto;
+        max-width: 96vw;
+        height: auto;
+        background: #65bd63;
+        border: 5px solid white;
+        border-radius: 12px;
+    }
+
+    button {
+        padding: 10px 22px;
+        border: none;
+        border-radius: 8px;
+        background: #ffcf45;
+        font-size: 17px;
+        font-weight: bold;
+        cursor: pointer;
+    }
+
+    .controls {
+        line-height: 1.8;
+        padding-bottom: 20px;
+    }
+</style>
+</head>
+
+<body>
+
+<h1>🐢 꼬부기 더비 ⚽</h1>
+
+<div class="info">
+    <span style="color:#ff7777">1P 빨간 머리띠</span>
+    <span id="score">0 : 0</span>
+    <span style="color:#ffe36b">2P 노란 머리띠</span>
+</div>
+
+<div class="info" id="timer">남은 시간: 90초</div>
+
+<canvas id="game" width="900" height="520"></canvas>
+
+<button onclick="restartGame()">다시 시작</button>
+
+<div class="controls">
+    <p>🔴 1P: W A S D 이동 / Space 슛</p>
+    <p>🟡 2P: 방향키 이동 / Enter 슛</p>
+</div>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+const W = canvas.width;
+const H = canvas.height;
+
+const keys = {};
+
+let score1 = 0;
+let score2 = 0;
+let timeLeft = 90;
+let gameOver = false;
+
+let lastTime = performance.now();
+let lastKick1 = 0;
+let lastKick2 = 0;
+
+const player1 = {
+    x: 220, y: 260,
+    vx: 0, vy: 0,
+    speed: 3.8,
+    color: "#42b8d2",
+    headband: "#ed4545",
+    shell: "#8c5434",
+    number: "1"
+};
+
+const player2 = {
+    x: 680, y: 260,
+    vx: 0, vy: 0,
+    speed: 3.8,
+    color: "#62c9e8",
+    headband: "#ffdc38",
+    shell: "#344e80",
+    number: "2"
+};
+
+const ball = {
+    x: 450, y: 260,
+    vx: 0, vy: 0,
+    r: 12
+};
+
+document.addEventListener("keydown", e => {
+    keys[e.code] = true;
+
+    if ([
+        "ArrowUp", "ArrowDown", "ArrowLeft",
+        "ArrowRight", "Space", "Enter"
+    ].includes(e.code)) {
+        e.preventDefault();
+    }
+});
+
+document.addEventListener("keyup", e => {
+    keys[e.code] = false;
+});
+
+function drawField() {
+    ctx.fillStyle = "#65bd63";
+    ctx.fillRect(0, 0, W, H);
+
+    // 잔디 무늬
+    for (let x = 0; x < W; x += 100) {
+        ctx.fillStyle = "rgba(255,255,255,0.06)";
+        ctx.fillRect(x, 0, 50, H);
+    }
+
+    ctx.strokeStyle = "white";
+    ctx.lineWidth = 4;
+
+    // 경기장 테두리
+    ctx.strokeRect(25, 25, W - 50, H - 50);
+
+    // 중앙선
+    ctx.beginPath();
+    ctx.moveTo(W / 2, 25);
+    ctx.lineTo(W / 2, H - 25);
+    ctx.stroke();
+
+    // 중앙 원
+    ctx.beginPath();
+    ctx.arc(W / 2, H / 2, 75, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 골대
+    ctx.fillStyle = "#eeeeee";
+    ctx.fillRect(0, 205, 30, 110);
+    ctx.fillRect(W - 30, 205, 30, 110);
+
+    ctx.fillStyle = "#333";
+    ctx.font = "bold 16px Arial";
+    ctx.fillText("GOAL", 2, 195);
+    ctx.fillText("GOAL", W - 62, 195);
+}
+
+function drawTurtle(p) {
+    ctx.save();
+    ctx.translate(p.x, p.y);
+
+    // 그림자
+    ctx.fillStyle = "rgba(0,0,0,0.2)";
+    ctx.beginPath();
+    ctx.ellipse(0, 20, 28, 10, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 꼬리
+    ctx.strokeStyle = p.color;
+    ctx.lineWidth = 9;
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    ctx.moveTo(-19, 10);
+    ctx.quadraticCurveTo(-40, 23, -30, 35);
+    ctx.stroke();
+
+    // 다리
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.ellipse(-17, 14, 9, 12, 0, 0, Math.PI * 2);
+    ctx.ellipse(17, 14, 9, 12, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 등껍질
+    ctx.fillStyle = p.shell;
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 27, 23, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#e4d3a0";
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.ellipse(0, 3, 20, 17, 0, 0, Math.PI * 2);
+    ctx.stroke();
+
+    // 등껍질 무늬
+    ctx.beginPath();
+    ctx.moveTo(0, -14);
+    ctx.lineTo(0, 20);
+    ctx.moveTo(-18, 2);
+    ctx.lineTo(18, 2);
+    ctx.stroke();
+
+    // 몸통
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.ellipse(0, -10, 21, 25, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 배
+    ctx.fillStyle = "#f5e5b5";
+    ctx.beginPath();
+    ctx.ellipse(0, -5, 13, 17, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 머리
+    ctx.fillStyle = p.color;
+    ctx.beginPath();
+    ctx.arc(0, -35, 25, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 머리띠
+    ctx.fillStyle = p.headband;
+    ctx.fillRect(-23, -48, 46, 7);
+
+    // 눈
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.ellipse(-9, -38, 6, 9, 0, 0, Math.PI * 2);
+    ctx.ellipse(9, -38, 6, 9, 0, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#172b35";
+    ctx.beginPath();
+    ctx.arc(-9, -37, 3, 0, Math.PI * 2);
+    ctx.arc(9, -37, 3, 0, Math.PI * 2);
+    ctx.fill();
+
+    // 입
+    ctx.strokeStyle = "#263b40";
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(0, -28, 6, 0.2, Math.PI - 0.2);
+    ctx.stroke();
+
+    // 선수 번호
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(0, 3, 9, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.fillStyle = "#222";
+    ctx.font = "bold 12px Arial";
+    ctx.textAlign = "center";
+    ctx.fillText(p.number, 0, 7);
+
+    ctx.restore();
+}
+
+function drawBall() {
+    ctx.save();
+
+    ctx.fillStyle = "white";
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, ball.r, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.strokeStyle = "#222";
+    ctx.lineWidth = 2;
+    ctx.stroke();
+
+    ctx.fillStyle = "#222";
+    ctx.beginPath();
+    ctx.arc(ball.x, ball.y, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    ctx.restore();
+}
+
+function movePlayer(p, up, down, left, right) {
+    let dx = 0;
+    let dy = 0;
+
+    if (keys[up]) dy--;
+    if (keys[down]) dy++;
+    if (keys[left]) dx--;
+    if (keys[right]) dx++;
+
+    const length = Math.hypot(dx, dy);
+
+    if (length > 0) {
+        dx /= length;
+        dy /= length;
+    }
+
+    p.x += dx * p.speed;
+    p.y += dy * p.speed;
+
+    p.x = Math.max(55, Math.min(W - 55, p.x));
+    p.y = Math.max(65, Math.min(H - 65, p.y));
+}
+
+function kick(p, direction, now, playerNumber) {
+    const distance = Math.hypot(
+        ball.x - p.x,
+        ball.y - p.y
+    );
+
+    const lastKick = playerNumber === 1
+        ? lastKick1
+        : lastKick2;
+
+    if (distance < 65 && now - lastKick > 350) {
+        const dx = ball.x - p.x;
+        const dy = ball.y - p.y;
+        const length = Math.hypot(dx, dy) || 1;
+
+        ball.vx = (dx / length) * 9 + direction * 3;
+        ball.vy = (dy / length) * 9;
+
+        if (playerNumber === 1) lastKick1 = now;
+        else lastKick2 = now;
+    }
+}
+
+function moveBall() {
+    ball.x += ball.vx;
+    ball.y += ball.vy;
+
+    // 마찰
+    ball.vx *= 0.985;
+    ball.vy *= 0.985;
+
+    // 위아래 벽 충돌
+    if (ball.y - ball.r < 25) {
+        ball.y = 25 + ball.r;
+        ball.vy *= -0.8;
+    }
+
+    if (ball.y + ball.r > H - 25) {
+        ball.y = H - 25 - ball.r;
+        ball.vy *= -0.8;
+    }
+
+    // 좌우 벽 및 골 판정
+    if (ball.x < 30 && (ball.y < 205 || ball.y > 315)) {
+        ball.x = 30;
+        ball.vx *= -0.8;
+    }
+
+    if (ball.x > W - 30 && (ball.y < 205 || ball.y > 315)) {
+        ball.x = W - 30;
+        ball.vx *= -0.8;
+    }
+
+    // 왼쪽 골대: 2P 득점
+    if (ball.x < 25 && ball.y > 205 && ball.y < 315) {
+        score2++;
+        resetPositions();
+    }
+
+    // 오른쪽 골대: 1P 득점
+    if (ball.x > W - 25 && ball.y > 205 && ball.y < 315) {
+        score1++;
+        resetPositions();
+    }
+}
+
+function collidePlayer(p) {
+    const dx = ball.x - p.x;
+    const dy = ball.y - (p.y - 10);
+    const distance = Math.hypot(dx, dy);
+
+    if (distance < 38) {
+        const angle = Math.atan2(dy, dx);
+        const push = 2.5;
+
+        ball.vx += Math.cos(angle) * push;
+        ball.vy += Math.sin(angle) * push;
+
+        const overlap = 38 - distance;
+        ball.x += Math.cos(angle) * overlap;
+        ball.y += Math.sin(angle) * overlap;
+    }
+}
+
+function resetPositions() {
+    ball.x = W / 2;
+    ball.y = H / 2;
+    ball.vx = 0;
+    ball.vy = 0;
+
+    player1.x = 220;
+    player1.y = 260;
+
+    player2.x = 680;
+    player2.y = 260;
+
+    updateScore();
+}
+
+function updateScore() {
+    document.getElementById("score").textContent =
+        score1 + " : " + score2;
+}
+
+function restartGame() {
+    score1 = 0;
+    score2 = 0;
+    timeLeft = 90;
+    gameOver = false;
+
+    lastTime = performance.now();
+
+    resetPositions();
+}
+
+function updateTimer() {
+    document.getElementById("timer").textContent =
+        "남은 시간: " + Math.ceil(timeLeft) + "초";
+}
+
+function update(delta, now) {
+    if (gameOver) return;
+
+    timeLeft -= delta / 1000;
+
+    if (timeLeft <= 0) {
+        timeLeft = 0;
+        gameOver = true;
+    }
+
+    movePlayer(
+        player1,
+        "KeyW", "KeyS", "KeyA", "KeyD"
+    );
+
+    movePlayer(
+        player2,
+        "ArrowUp", "ArrowDown",
+        "ArrowLeft", "ArrowRight"
+    );
+
+    if (keys["Space"]) {
+        kick(player1, 1, now, 1);
+    }
+
+    if (keys["Enter"]) {
+        kick(player2, -1, now, 2);
+    }
+
+    collidePlayer(player1);
+    collidePlayer(player2);
+
+    moveBall();
+
+    updateTimer();
+}
+
+function draw() {
+    drawField();
+
+    drawTurtle(player1);
+    drawTurtle(player2);
+    drawBall();
+
+    if (gameOver) {
+        ctx.fillStyle = "rgba(0,0,0,0.65)";
+        ctx.fillRect(0, 0, W, H);
+
+        ctx.fillStyle = "white";
+        ctx.textAlign = "center";
+        ctx.font = "bold 42px Arial";
+
+        let result = "무승부!";
+
+        if (score1 > score2) result = "1P 승리!";
+        if (score2 > score1) result = "2P 승리!";
+
+        ctx.fillText(result, W / 2, H / 2 - 15);
+
+        ctx.font = "24px Arial";
+        ctx.fillText(
+            score1 + " : " + score2,
+            W / 2,
+            H / 2 + 30
+        );
+    }
+}
+
+function gameLoop(now) {
+    const delta = Math.min(now - lastTime, 50);
+    lastTime = now;
+
+    update(delta, now);
+    draw();
+
+    requestAnimationFrame(gameLoop);
+}
+
+updateScore();
+updateTimer();
+requestAnimationFrame(gameLoop);
+</script>
+
+</body>
+</html>
